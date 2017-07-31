@@ -2056,7 +2056,8 @@ static int manager_dispatch_signal_fd(sd_event_source *source, int fd, uint32_t 
                         }
 
                         /* Run the exit target if there is one, if not, just exit. */
-                        if (manager_start_target(m, SPECIAL_EXIT_TARGET, JOB_REPLACE) < 0) {
+                        if (manager_start_target(m, SPECIAL_EXIT_TARGET,
+                                                    JOB_REPLACE_IRREVERSIBLY) < 0) {
                                 m->exit_code = MANAGER_EXIT;
                                 return 0;
                         }
@@ -2065,14 +2066,16 @@ static int manager_dispatch_signal_fd(sd_event_source *source, int fd, uint32_t 
 
                 case SIGWINCH:
                         if (MANAGER_IS_SYSTEM(m))
-                                manager_start_target(m, SPECIAL_KBREQUEST_TARGET, JOB_REPLACE);
+                                manager_start_target(m, SPECIAL_KBREQUEST_TARGET,
+                                                        JOB_REPLACE_IRREVERSIBLY);
 
                         /* This is a nop on non-init */
                         break;
 
                 case SIGPWR:
                         if (MANAGER_IS_SYSTEM(m))
-                                manager_start_target(m, SPECIAL_SIGPWR_TARGET, JOB_REPLACE);
+                                manager_start_target(m, SPECIAL_SIGPWR_TARGET,
+                                                        JOB_REPLACE_IRREVERSIBLY);
 
                         /* This is a nop on non-init */
                         break;
@@ -2128,14 +2131,17 @@ static int manager_dispatch_signal_fd(sd_event_source *source, int fd, uint32_t 
                 default: {
 
                         /* Starting SIGRTMIN+0 */
-                        static const char * const target_table[] = {
-                                [0] = SPECIAL_DEFAULT_TARGET,
-                                [1] = SPECIAL_RESCUE_TARGET,
-                                [2] = SPECIAL_EMERGENCY_TARGET,
-                                [3] = SPECIAL_HALT_TARGET,
-                                [4] = SPECIAL_POWEROFF_TARGET,
-                                [5] = SPECIAL_REBOOT_TARGET,
-                                [6] = SPECIAL_KEXEC_TARGET
+                        static const struct {
+                                const char *target;
+                                JobMode mode;
+                        } target_table[] = {
+                                [0] = { SPECIAL_DEFAULT_TARGET,   JOB_ISOLATE },
+                                [1] = { SPECIAL_RESCUE_TARGET,    JOB_ISOLATE },
+                                [2] = { SPECIAL_EMERGENCY_TARGET, JOB_ISOLATE },
+                                [3] = { SPECIAL_HALT_TARGET,      JOB_REPLACE_IRREVERSIBLY },
+                                [4] = { SPECIAL_POWEROFF_TARGET,  JOB_REPLACE_IRREVERSIBLY },
+                                [5] = { SPECIAL_REBOOT_TARGET,    JOB_REPLACE_IRREVERSIBLY },
+                                [6] = { SPECIAL_KEXEC_TARGET,     JOB_REPLACE_IRREVERSIBLY }
                         };
 
                         /* Starting SIGRTMIN+13, so that target halt and system halt are 10 apart */
@@ -2149,8 +2155,8 @@ static int manager_dispatch_signal_fd(sd_event_source *source, int fd, uint32_t 
                         if ((int) sfsi.ssi_signo >= SIGRTMIN+0 &&
                             (int) sfsi.ssi_signo < SIGRTMIN+(int) ELEMENTSOF(target_table)) {
                                 int idx = (int) sfsi.ssi_signo - SIGRTMIN;
-                                manager_start_target(m, target_table[idx],
-                                                     (idx == 1 || idx == 2) ? JOB_ISOLATE : JOB_REPLACE);
+                                manager_start_target(m, target_table[idx].target,
+                                                        target_table[idx].mode);
                                 break;
                         }
 
