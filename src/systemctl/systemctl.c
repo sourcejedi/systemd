@@ -145,7 +145,6 @@ static char *arg_root = NULL;
 static usec_t arg_when = 0;
 static char *argv_cmdline = NULL;
 static enum action {
-        _ACTION_INVALID,
         ACTION_SYSTEMCTL,
         ACTION_HALT,
         ACTION_POWEROFF,
@@ -166,7 +165,8 @@ static enum action {
         ACTION_REEXEC,
         ACTION_RUNLEVEL,
         ACTION_CANCEL_SHUTDOWN,
-        _ACTION_MAX
+        _ACTION_MAX,
+        _ACTION_INVALID = -1
 } arg_action = ACTION_SYSTEMCTL;
 static BusTransport arg_transport = BUS_TRANSPORT_LOCAL;
 static const char *arg_host = NULL;
@@ -3083,24 +3083,30 @@ static int start_unit(int argc, char *argv[], void *userdata) {
         polkit_agent_open_if_enabled();
 
         if (arg_action == ACTION_SYSTEMCTL) {
-                enum action action;
+                enum action action = verb_to_action(argv[0]);
 
-                method = verb_to_method(argv[0]);
-                action = verb_to_action(argv[0]);
+                if (action != _ACTION_INVALID) {
+                        method = "StartUnit";
+                        mode = action_table[action].mode;
+                        one_name = action_table[action].target;
+                } else {
+                        if (streq(argv[0], "isolate")) {
+                                method = "StartUnit";
+                                mode = "isolate";
 
-                if (streq(argv[0], "isolate")) {
-                        mode = "isolate";
-                        suffix = ".target";
-                } else
-                        mode = action_table[action].mode ?: arg_job_mode;
-
-                one_name = action_table[action].target;
+                                suffix = ".target";
+                        } else {
+                                method = verb_to_method(argv[0]);
+                                mode = arg_job_mode;
+                        }
+                        one_name = NULL;
+                }
         } else {
                 assert(arg_action < ELEMENTSOF(action_table));
                 assert(action_table[arg_action].target);
+                assert(action_table[arg_action].mode);
 
                 method = "StartUnit";
-
                 mode = action_table[arg_action].mode;
                 one_name = action_table[arg_action].target;
         }
