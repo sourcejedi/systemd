@@ -8425,13 +8425,13 @@ static int logind_schedule_shutdown(void) {
                         action,
                         arg_when);
         if (r < 0)
-                return log_warning_errno(r, "Failed to call ScheduleShutdown in logind, proceeding with immediate shutdown: %s", bus_error_message(&error, r));
+                return log_warning_errno(r, "Failed to call ScheduleShutdown in logind: %s", bus_error_message(&error, r));
 
         if (!arg_quiet)
                 log_info("Shutdown scheduled for %s, use 'shutdown -c' to cancel.", format_timestamp(date, sizeof(date), arg_when));
         return 0;
 #else
-        log_error("Cannot schedule shutdown without logind support, proceeding with immediate shutdown.");
+        log_error("Cannot schedule shutdown without logind support.");
         return -ENOSYS;
 #endif
 }
