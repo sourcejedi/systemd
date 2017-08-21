@@ -1504,8 +1504,6 @@ static int send_prepare_for(Manager *m, InhibitWhat w, bool _active) {
 
 static int execute_shutdown_or_sleep(
                 Manager *m,
-                InhibitWhat w,
-                const char *unit_name,
                 sd_bus_error *error) {
 
         _cleanup_(sd_bus_message_unrefp) sd_bus_message *reply = NULL;
@@ -1514,12 +1512,12 @@ static int execute_shutdown_or_sleep(
         int r;
 
         assert(m);
-        assert(w > 0);
-        assert(w < _INHIBIT_WHAT_MAX);
-        assert(unit_name);
+        assert(m->action_what >= 0);
+        assert(m->action_what < _INHIBIT_WHAT_MAX);
+        assert(m->action_unit);
 
-        if (w == INHIBIT_SHUTDOWN)
-                bus_manager_log_shutdown(m, unit_name);
+        if (m->action == INHIBIT_SHUTDOWN)
+                bus_manager_log_shutdown(m, m->action_what, m->action_unit);
 
         r = sd_bus_call_method(
                         m->bus,
@@ -1529,7 +1527,7 @@ static int execute_shutdown_or_sleep(
                         "StartUnit",
                         error,
                         &reply,
-                        "ss", unit_name, "replace-irreversibly");
+                        "ss", m->action_unit, "replace-irreversibly");
         if (r < 0)
                 goto error;
 
@@ -1543,10 +1541,8 @@ static int execute_shutdown_or_sleep(
                 goto error;
         }
 
-        m->action_unit = unit_name;
         free(m->action_job);
         m->action_job = c;
-        m->action_what = w;
 
         /* Make sure the lid switch is ignored for a while */
         manager_set_lid_switch_ignore(m, now(CLOCK_MONOTONIC) + m->holdoff_timeout_usec);
@@ -1797,6 +1793,8 @@ static int method_do_shutdown_or_sleep(
         /* Don't allow multiple jobs being executed at the same time */
         if (m->action_what)
                 return sd_bus_error_setf(error, BUS_ERROR_OPERATION_IN_PROGRESS, "There's already a shutdown or sleep operation in progress");
+        m->action_what = w;
+        m->action_unit = unit_name;
 
         if (sleep_verb) {
                 r = can_sleep(sleep_verb);
@@ -1812,7 +1810,7 @@ static int method_do_shutdown_or_sleep(
         if (r != 0)
                 return r;
 
-        r = bus_manager_shutdown_or_sleep_now_or_later(m, unit_name, w, error);
+        return bus_manager_shutdown_or_sleep_now_or_later(m, error);
         if (r < 0)
                 return r;
 
