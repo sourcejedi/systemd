@@ -1547,6 +1547,15 @@ static int execute_shutdown_or_sleep(
         /* Make sure the lid switch is ignored for a while */
         manager_set_lid_switch_ignore(m, now(CLOCK_MONOTONIC) + m->holdoff_timeout_usec);
 
+        /* nope, need to move in _2_ different places :(
+        if (m->action_message) {
+                r = sd_bus_reply_method_return(m->action_message, NULL);
+
+                m->action_message = sd_bus_message_unref(message);
+                if (r < 0)
+                        return r;
+        }*/
+
         return 0;
 
 error:
@@ -1556,7 +1565,7 @@ error:
         return r;
 }
 
-int manager_dispatch_delayed(Manager *manager, bool timeout) {
+int manager_dispatch_delayed(Manager *manager, bool timeout, bool reply_nowait) {
 
         _cleanup_(sd_bus_error_free) sd_bus_error error = SD_BUS_ERROR_NULL;
         Inhibitor *offending = NULL;
@@ -1582,7 +1591,7 @@ int manager_dispatch_delayed(Manager *manager, bool timeout) {
         }
 
         /* Actually do the operation */
-        r = execute_shutdown_or_sleep(manager, manager->action_what, manager->action_unit, &error);
+        r = execute_shutdown_or_sleep(manager, manager->action_what, manager->action_unit, reply_nowait, &error);
         if (r < 0) {
                 log_warning("Error during inhibitor-delayed operation (already returned success to client): %s",
                             bus_error_message(&error, r));
@@ -1650,6 +1659,7 @@ int bus_manager_shutdown_or_sleep_now_or_later(
                 Manager *m,
                 const char *unit_name,
                 InhibitWhat w,
+                bool reply_nowait,
                 sd_bus_error *error) {
 
         bool delayed;
@@ -1675,7 +1685,7 @@ int bus_manager_shutdown_or_sleep_now_or_later(
         else
                 /* Shutdown is not delayed, execute it
                  * immediately */
-                r = execute_shutdown_or_sleep(m, w, unit_name, error);
+                r = execute_shutdown_or_sleep(m, w, unit_name, reply_nowait, error);
 
         return r;
 }
@@ -1770,6 +1780,7 @@ static int verify_shutdown_creds(
 static int method_do_shutdown_or_sleep(
                 Manager *m,
                 sd_bus_message *message,
+                int method_version,
                 const char *unit_name,
                 InhibitWhat w,
                 const char *action,
@@ -1779,6 +1790,7 @@ static int method_do_shutdown_or_sleep(
                 sd_bus_error *error) {
 
         int interactive, r;
+        unsigned flags;
 
         assert(m);
         assert(message);
@@ -1786,9 +1798,16 @@ static int method_do_shutdown_or_sleep(
         assert(w >= 0);
         assert(w <= _INHIBIT_WHAT_MAX);
 
-        r = sd_bus_message_read(message, "b", &interactive);
-        if (r < 0)
-                return r;
+        if (method_version == 1) {
+                flags = SHUTDOWN_FLAGS_NOWAIT;
+                r = sd_bus_message_read(message, "b", &interactive);
+                if (r < 0)
+                        return r;
+        } else {
+                r = sd_bus_message_read(message, "ub", &flags, &interactive);
+                if (r < 0)
+                        return r;
+        }
 
         /* Don't allow multiple jobs being executed at the same time */
         if (m->action_what)
@@ -1811,16 +1830,49 @@ static int method_do_shutdown_or_sleep(
                 return r;
 
         return bus_manager_shutdown_or_sleep_now_or_later(m, error);
+}
+
+static int method_do_shutdown_or_sleep(
+                Manager *m,
+                sd_bus_message *message,
+                const char *unit_name,
+                InhibitWhat w,
+                const char *action,
+                const char *action_multiple_sessions,
+                const char *action_ignore_inhibit,
+                const char *sleep_verb,
+                sd_bus_error *error) {
+
+        int r;
+
+        r = sd_bus_message_read(message, "b", &interactive);
         if (r < 0)
                 return r;
 
-        return sd_bus_reply_method_return(message, NULL);
+        return method_do_shutdown_or_sleep_flags(
+                m, message, interactive, SHUTDOWN_FLAG_NOWAIT, unit_name, w
+                action, action_multiple_sessions, action_ignore_inhibit,
+                sleep_verb, error);
+}
+
+static int method_poweroff2(sd_bus_message *message, void *userdata, sd_bus_error *error) {
+        Manager *m = userdata;
+
+        return method_do_shutdown_or_sleep2(
+                        m, message,
+                        SPECIAL_POWEROFF_TARGET,
+                        INHIBIT_SHUTDOWN,
+                        "org.freedesktop.login1.power-off",
+                        "org.freedesktop.login1.power-off-multiple-sessions",
+                        "org.freedesktop.login1.power-off-ignore-inhibit",
+                        NULL,
+                        error);
 }
 
 static int method_poweroff(sd_bus_message *message, void *userdata, sd_bus_error *error) {
         Manager *m = userdata;
 
-        return method_do_shutdown_or_sleep(
+        return method_do_shutdown_or_sleep1(
                         m, message,
                         SPECIAL_POWEROFF_TARGET,
                         INHIBIT_SHUTDOWN,
@@ -2638,6 +2690,11 @@ const sd_bus_vtable manager_vtable[] = {
         SD_BUS_METHOD("Suspend", "b", NULL, method_suspend, SD_BUS_VTABLE_UNPRIVILEGED),
         SD_BUS_METHOD("Hibernate", "b", NULL, method_hibernate, SD_BUS_VTABLE_UNPRIVILEGED),
         SD_BUS_METHOD("HybridSleep", "b", NULL, method_hybrid_sleep, SD_BUS_VTABLE_UNPRIVILEGED),
+        SD_BUS_METHOD("PowerOff2", "ub", NULL, method_poweroff2, SD_BUS_VTABLE_UNPRIVILEGED),
+//         SD_BUS_METHOD("Reboot2", "ub", NULL, method_reboot2, SD_BUS_VTABLE_UNPRIVILEGED),
+//         SD_BUS_METHOD("Suspend2", "ub", NULL, method_suspend2, SD_BUS_VTABLE_UNPRIVILEGED),
+//         SD_BUS_METHOD("Hibernate2", "ub", NULL, method_hibernate2, SD_BUS_VTABLE_UNPRIVILEGED),
+//         SD_BUS_METHOD("HybridSleep2", "ub", NULL, method_hybrid_sleep2, SD_BUS_VTABLE_UNPRIVILEGED),
         SD_BUS_METHOD("CanPowerOff", NULL, "s", method_can_poweroff, SD_BUS_VTABLE_UNPRIVILEGED),
         SD_BUS_METHOD("CanReboot", NULL, "s", method_can_reboot, SD_BUS_VTABLE_UNPRIVILEGED),
         SD_BUS_METHOD("CanSuspend", NULL, "s", method_can_suspend, SD_BUS_VTABLE_UNPRIVILEGED),
