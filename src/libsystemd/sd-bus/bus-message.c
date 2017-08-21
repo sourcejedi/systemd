@@ -941,7 +941,7 @@ _public_ int sd_bus_message_get_cookie(sd_bus_message *m, uint64_t *cookie) {
         if (c == 0)
                 return -ENODATA;
 
-        *cookie = BUS_MESSAGE_COOKIE(m);
+        *cookie = c;
         return 0;
 }
 
