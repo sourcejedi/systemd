@@ -1899,16 +1899,18 @@ static int update_schedule_file(Manager *m) {
 
         fprintf(f,
                 "USEC="USEC_FMT"\n"
+                "DRY_RUN=%i\n"
                 "WARN_WALL=%i\n"
                 "MODE=%s\n",
                 m->scheduled_shutdown_timeout,
+                m->shutdown_dry_run,
                 m->enable_wall_messages,
                 m->scheduled_shutdown_type);
 
         if (!isempty(m->wall_message)) {
                 _cleanup_free_ char *t;
 
-                t = cescape(m->wall_message);
+                t = shell_maybe_quote(m->wall_message, ESCAPE_BACKSLASH);
                 if (!t) {
                         r = -ENOMEM;
                         goto fail;
@@ -2005,47 +2007,15 @@ error:
         return r;
 }
 
-static int method_schedule_shutdown(sd_bus_message *message, void *userdata, sd_bus_error *error) {
-        Manager *m = userdata;
-        _cleanup_(sd_bus_creds_unrefp) sd_bus_creds *creds = NULL;
-        const char *action_multiple_sessions = NULL;
-        const char *action_ignore_inhibit = NULL;
-        const char *action = NULL;
-        uint64_t elapse;
-        char *type;
+static int do_schedule_shutdown(
+        Manager *m,
+        uint64_t elapse,
+        const char *type,
+        bool dry_run,
+        const char *from_tty,
+        uid_t from_uid,
+        sd_bus_error *error) {
         int r;
-
-        assert(m);
-        assert(message);
-
-        r = sd_bus_message_read(message, "st", &type, &elapse);
-        if (r < 0)
-                return r;
-
-        if (startswith(type, "dry-")) {
-                type += 4;
-                m->shutdown_dry_run = true;
-        }
-
-        if (streq(type, "reboot")) {
-                action = "org.freedesktop.login1.reboot";
-                action_multiple_sessions = "org.freedesktop.login1.reboot-multiple-sessions";
-                action_ignore_inhibit = "org.freedesktop.login1.reboot-ignore-inhibit";
-        } else if (streq(type, "halt")) {
-                action = "org.freedesktop.login1.halt";
-                action_multiple_sessions = "org.freedesktop.login1.halt-multiple-sessions";
-                action_ignore_inhibit = "org.freedesktop.login1.halt-ignore-inhibit";
-        } else if (streq(type, "poweroff")) {
-                action = "org.freedesktop.login1.power-off";
-                action_multiple_sessions = "org.freedesktop.login1.power-off-multiple-sessions";
-                action_ignore_inhibit = "org.freedesktop.login1.power-off-ignore-inhibit";
-        } else
-                return sd_bus_error_setf(error, SD_BUS_ERROR_INVALID_ARGS, "Unsupported shutdown type");
-
-        r = verify_all_shutdown_creds(m, message, false, action, action_multiple_sessions,
-                                      action_ignore_inhibit, error);
-        if (r != 0)
-                return r;
 
         if (m->scheduled_shutdown_timeout_source) {
                 r = sd_event_source_set_time(m->scheduled_shutdown_timeout_source, elapse);
@@ -2085,6 +2055,112 @@ static int method_schedule_shutdown(sd_bus_message *message, void *userdata, sd_
 
         m->scheduled_shutdown_timeout = elapse;
 
+        r = manager_setup_wall_message_timer(m);
+        if (r < 0)
+                return r;
+
+        r = update_schedule_file(m);
+        if (r < 0)
+                return r;
+
+        return 0;
+}
+
+int parse_scheduled_shutdown(Manager *m) {
+        _cleanup_(sd_bus_error_free) sd_bus_error error = SD_BUS_ERROR_NULL;
+        _cleanup_free_ char *usec = NULL,
+                *warn_wall = NULL,
+                *dry_run = NULL,
+                *mode = NULL,
+                *wall_message = NULL;
+        bool shutdown_dry_run, enable_wall_messages;
+        uint64_t timeout;
+        int r;
+
+        r = parse_env_file("/run/systemd/shutdown", NEWLINE,
+                           "USEC", &usec,
+                           "DRY_RUN", &dry_run,
+                           "WARN_WALL", &warn_wall,
+                           "MODE", &mode,
+                           "WALL_MESSAGE", &wall_message,
+                           NULL);
+        if (r < 0) {
+                if (r == -ENOENT)
+                        return 0;
+                return r;
+        }
+
+        if (!usec)
+                goto parse_error;
+        r = safe_atou64(usec, &timeout);
+        if (r < 0)
+                goto parse_error;
+
+        if (!mode || !STR_IN_SET(mode, "reboot", "halt", "poweroff"))
+                goto parse_error;
+
+        shutdown_dry_run = dry_run ? streq(dry_run, "1") : false;
+        enable_wall_messages = warn_wall ? streq(warn_wall, "1") : false;
+
+        r = do_schedule_shutdown(m, timeout, mode, shutdown_dry_run, &error);
+        if (r < 0) {
+                if (bus_error_is_dirty(&error))
+                        log_error("Error loading scheduled shutdown: %s", bus_error_message(&error, r));
+                return r;
+        }
+
+        m->enable_wall_messages = enable_wall_messages;
+        m->wall_message = wall_message;
+
+        return 0;
+
+parse_error:
+        return log_error_errno(EINVAL, "Error parsing scheduled shutdown (/run/systemd/shutdown)");
+}
+
+static int method_schedule_shutdown(sd_bus_message *message, void *userdata, sd_bus_error *error) {
+        _cleanup_(sd_bus_creds_unrefp) sd_bus_creds *creds = NULL;
+        const char *action_multiple_sessions = NULL;
+        const char *action_ignore_inhibit = NULL;
+        const char *action = NULL;
+        Manager *m = userdata;
+        bool dry_run = false;
+        uint64_t elapse;
+        char *type;
+        int r;
+
+        assert(m);
+        assert(message);
+
+        r = sd_bus_message_read(message, "st", &type, &elapse);
+        if (r < 0)
+                return r;
+
+        if (startswith(type, "dry-")) {
+                type += 4;
+                dry_run = true;
+        }
+
+        if (streq(type, "reboot")) {
+                action = "org.freedesktop.login1.reboot";
+                action_multiple_sessions = "org.freedesktop.login1.reboot-multiple-sessions";
+                action_ignore_inhibit = "org.freedesktop.login1.reboot-ignore-inhibit";
+        } else if (streq(type, "halt")) {
+                action = "org.freedesktop.login1.halt";
+                action_multiple_sessions = "org.freedesktop.login1.halt-multiple-sessions";
+                action_ignore_inhibit = "org.freedesktop.login1.halt-ignore-inhibit";
+        } else if (streq(type, "poweroff")) {
+                action = "org.freedesktop.login1.power-off";
+                action_multiple_sessions = "org.freedesktop.login1.power-off-multiple-sessions";
+                action_ignore_inhibit = "org.freedesktop.login1.power-off-ignore-inhibit";
+        } else
+                return sd_bus_error_setf(error, SD_BUS_ERROR_INVALID_ARGS, "Unsupported shutdown type");
+
+        r = verify_all_shutdown_creds(m, message, false, action, action_multiple_sessions,
+                                      action_ignore_inhibit, error);
+        if (r != 0)
+                return r;
+
         r = sd_bus_query_sender_creds(message, SD_BUS_CREDS_AUGMENT|SD_BUS_CREDS_TTY|SD_BUS_CREDS_UID, &creds);
         if (r >= 0) {
                 const char *tty = NULL;
@@ -2099,11 +2175,7 @@ static int method_schedule_shutdown(sd_bus_message *message, void *userdata, sd_
                 }
         }
 
-        r = manager_setup_wall_message_timer(m);
-        if (r < 0)
-                return r;
-
-        r = update_schedule_file(m);
+        r = do_schedule_shutdown(m, elapse, type, dry_run, tty, uid, error);
         if (r < 0)
                 return r;
 
