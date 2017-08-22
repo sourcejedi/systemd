@@ -60,22 +60,6 @@ _const_ static usec_t when_wall(usec_t n, usec_t elapse) {
         return left % USEC_PER_HOUR;
 }
 
-bool logind_wall_tty_filter(const char *tty, void *userdata) {
-        Manager *m = userdata;
-        const char *p;
-
-        assert(m);
-
-        if (!m->scheduled_shutdown_tty)
-                return true;
-
-        p = path_startswith(tty, "/dev/");
-        if (!p)
-                return true;
-
-        return !streq(p, m->scheduled_shutdown_tty);
-}
-
 static int warn_wall(Manager *m, usec_t n) {
         char date[FORMAT_TIMESTAMP_MAX] = {};
         _cleanup_free_ char *l = NULL;
@@ -101,7 +85,7 @@ static int warn_wall(Manager *m, usec_t n) {
         }
 
         utmp_wall(l, uid_to_name(m->scheduled_shutdown_uid),
-                  m->scheduled_shutdown_tty, logind_wall_tty_filter, m);
+                  m->scheduled_shutdown_tty, NULL, NULL);
 
         return 1;
 }
