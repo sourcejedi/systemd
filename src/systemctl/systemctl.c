@@ -2867,7 +2867,7 @@ static int on_properties_changed(sd_bus_message *m, void *userdata, sd_bus_error
         return 0;
 }
 
-static int start_unit_one(
+static int do_unit_method_one(
                 sd_bus *bus,
                 const char *method,
                 const char *name,
@@ -3027,49 +3027,21 @@ static int expand_names(sd_bus *bus, char **names, const char* suffix, char ***r
         return 0;
 }
 
-static const struct {
-        const char *target;
-        const char *verb;
-        const char *mode;
-} action_table[_ACTION_MAX] = {
-        [ACTION_HALT]         = { SPECIAL_HALT_TARGET,         "halt",         "replace-irreversibly" },
-        [ACTION_POWEROFF]     = { SPECIAL_POWEROFF_TARGET,     "poweroff",     "replace-irreversibly" },
-        [ACTION_REBOOT]       = { SPECIAL_REBOOT_TARGET,       "reboot",       "replace-irreversibly" },
-        [ACTION_KEXEC]        = { SPECIAL_KEXEC_TARGET,        "kexec",        "replace-irreversibly" },
-        [ACTION_RUNLEVEL2]    = { SPECIAL_MULTI_USER_TARGET,   NULL,           "isolate" },
-        [ACTION_RUNLEVEL3]    = { SPECIAL_MULTI_USER_TARGET,   NULL,           "isolate" },
-        [ACTION_RUNLEVEL4]    = { SPECIAL_MULTI_USER_TARGET,   NULL,           "isolate" },
-        [ACTION_RUNLEVEL5]    = { SPECIAL_GRAPHICAL_TARGET,    NULL,           "isolate" },
-        [ACTION_RESCUE]       = { SPECIAL_RESCUE_TARGET,       "rescue",       "isolate" },
-        [ACTION_EMERGENCY]    = { SPECIAL_EMERGENCY_TARGET,    "emergency",    "isolate" },
-        [ACTION_DEFAULT]      = { SPECIAL_DEFAULT_TARGET,      "default",      "isolate" },
-        [ACTION_EXIT]         = { SPECIAL_EXIT_TARGET,         "exit",         "replace-irreversibly" },
-        [ACTION_SUSPEND]      = { SPECIAL_SUSPEND_TARGET,      "suspend",      "replace-irreversibly" },
-        [ACTION_HIBERNATE]    = { SPECIAL_HIBERNATE_TARGET,    "hibernate",    "replace-irreversibly" },
-        [ACTION_HYBRID_SLEEP] = { SPECIAL_HYBRID_SLEEP_TARGET, "hybrid-sleep", "replace-irreversibly" },
-};
+static int do_unit_method(
+                const char *method,
+                const char *mode,
+                char **args,
+                const char *suffix) {
 
-static enum action verb_to_action(const char *verb) {
-        enum action i;
-
-        for (i = _ACTION_INVALID; i < _ACTION_MAX; i++)
-                if (streq_ptr(action_table[i].verb, verb))
-                        return i;
-
-        return _ACTION_INVALID;
-}
-
-static int start_unit(int argc, char *argv[], void *userdata) {
         _cleanup_(bus_wait_for_jobs_freep) BusWaitForJobs *w = NULL;
-        const char *method, *mode, *one_name, *suffix = NULL;
-        _cleanup_strv_free_ char **names = NULL;
         sd_bus *bus;
         _cleanup_(wait_context_free) WaitContext wait_context = {};
+        _cleanup_strv_free_ char **names = NULL;
         char **name;
         int r = 0;
 
-        if (arg_wait && !STR_IN_SET(argv[0], "start", "restart")) {
-                log_error("--wait may only be used with the 'start' or 'restart' commands.");
+        if (arg_wait && !STR_IN_SET(method, "StartUnit", "RestartUnit")) {
+                log_error("--wait may only be used with commands that start units.");
                 return -EINVAL;
         }
 
@@ -3082,42 +3054,9 @@ static int start_unit(int argc, char *argv[], void *userdata) {
         ask_password_agent_open_if_enabled();
         polkit_agent_open_if_enabled();
 
-        if (arg_action == ACTION_SYSTEMCTL) {
-                enum action action = verb_to_action(argv[0]);
-
-                if (action != _ACTION_INVALID) {
-                        method = "StartUnit";
-                        mode = action_table[action].mode;
-                        one_name = action_table[action].target;
-                } else {
-                        if (streq(argv[0], "isolate")) {
-                                method = "StartUnit";
-                                mode = "isolate";
-
-                                suffix = ".target";
-                        } else {
-                                method = verb_to_method(argv[0]);
-                                mode = arg_job_mode;
-                        }
-                        one_name = NULL;
-                }
-        } else {
-                assert(arg_action < ELEMENTSOF(action_table));
-                assert(action_table[arg_action].target);
-                assert(action_table[arg_action].mode);
-
-                method = "StartUnit";
-                mode = action_table[arg_action].mode;
-                one_name = action_table[arg_action].target;
-        }
-
-        if (one_name)
-                names = strv_new(one_name, NULL);
-        else {
-                r = expand_names(bus, strv_skip(argv, 1), suffix, &names);
-                if (r < 0)
-                        return log_error_errno(r, "Failed to expand names: %m");
-        }
+        r = expand_names(bus, args, suffix, &names);
+        if (r < 0)
+                return log_error_errno(r, "Failed to expand names: %m");
 
         if (!arg_no_block) {
                 r = bus_wait_for_jobs_new(bus, &w);
@@ -3154,7 +3093,7 @@ static int start_unit(int argc, char *argv[], void *userdata) {
                 _cleanup_(sd_bus_error_free) sd_bus_error error = SD_BUS_ERROR_NULL;
                 int q;
 
-                q = start_unit_one(bus, method, *name, mode, &error, w, arg_wait ? &wait_context : NULL);
+                q = do_unit_method_one(bus, method, *name, mode, &error, w, arg_wait ? &wait_context : NULL);
                 if (r >= 0 && q < 0)
                         r = translate_bus_error_to_exit_status(q, &error);
         }
@@ -3196,6 +3135,74 @@ static int start_unit(int argc, char *argv[], void *userdata) {
         }
 
         return r;
+}
+
+static int start_unit(int argc, char *argv[], void *userdata) {
+
+        const char *method, *mode, *suffix = NULL;
+        char **names;
+
+        assert(argv[0]);
+
+        if (streq(argv[0], "isolate")) {
+                method = "StartUnit";
+                mode = "isolate";
+                suffix = ".target";
+        } else {
+                method = verb_to_method(argv[0]);
+                mode = arg_job_mode;
+        }
+        names = strv_skip(argv, 1);
+
+        return do_unit_method(method, mode, names, suffix);
+}
+
+static const struct {
+        const char *unit;
+        const char *verb;
+        const char *mode;
+} unit_actions[_ACTION_MAX] = {
+        [ACTION_HALT]         = { SPECIAL_HALT_TARGET,         "halt",         "replace-irreversibly" },
+        [ACTION_POWEROFF]     = { SPECIAL_POWEROFF_TARGET,     "poweroff",     "replace-irreversibly" },
+        [ACTION_REBOOT]       = { SPECIAL_REBOOT_TARGET,       "reboot",       "replace-irreversibly" },
+        [ACTION_KEXEC]        = { SPECIAL_KEXEC_TARGET,        "kexec",        "replace-irreversibly" },
+        [ACTION_RUNLEVEL2]    = { SPECIAL_MULTI_USER_TARGET,   NULL,           "isolate" },
+        [ACTION_RUNLEVEL3]    = { SPECIAL_MULTI_USER_TARGET,   NULL,           "isolate" },
+        [ACTION_RUNLEVEL4]    = { SPECIAL_MULTI_USER_TARGET,   NULL,           "isolate" },
+        [ACTION_RUNLEVEL5]    = { SPECIAL_GRAPHICAL_TARGET,    NULL,           "isolate" },
+        [ACTION_RESCUE]       = { SPECIAL_RESCUE_TARGET,       "rescue",       "isolate" },
+        [ACTION_EMERGENCY]    = { SPECIAL_EMERGENCY_TARGET,    "emergency",    "isolate" },
+        [ACTION_DEFAULT]      = { SPECIAL_DEFAULT_TARGET,      "default",      "isolate" },
+        [ACTION_EXIT]         = { SPECIAL_EXIT_TARGET,         "exit",         "replace-irreversibly" },
+        [ACTION_SUSPEND]      = { SPECIAL_SUSPEND_TARGET,      "suspend",      "replace-irreversibly" },
+        [ACTION_HIBERNATE]    = { SPECIAL_HIBERNATE_TARGET,    "hibernate",    "replace-irreversibly" },
+        [ACTION_HYBRID_SLEEP] = { SPECIAL_HYBRID_SLEEP_TARGET, "hybrid-sleep", "replace-irreversibly" },
+};
+
+static enum action verb_to_unit_action(const char *verb) {
+        enum action i;
+
+        for (i = _ACTION_INVALID; i < _ACTION_MAX; i++)
+                if (streq_ptr(unit_actions[i].verb, verb))
+                        return i;
+
+        return _ACTION_INVALID;
+}
+
+static int start_special_unit(enum action action) {
+        _cleanup_strv_free_ char **names = NULL;
+        const char *mode, *name;
+
+        assert(arg_action >= 0);
+        assert(arg_action < ELEMENTSOF(unit_actions));
+        assert(unit_actions[arg_action].unit);
+        assert(unit_actions[arg_action].mode);
+
+        mode = unit_actions[action].mode;
+        name = unit_actions[action].unit;
+        names = strv_new(name, NULL);
+
+        return do_unit_method("StartUnit", mode, names, NULL);
 }
 
 #ifdef ENABLE_LOGIND
@@ -3407,7 +3414,7 @@ static int logind_check_inhibitors(enum action a) {
                 return 0;
 
         log_error("Please retry operation after closing inhibitors and logging out other users.\nAlternatively, ignore inhibitors and users with 'systemctl %s -i'.",
-                  action_table[a].verb);
+                  unit_actions[a].verb);
 
         return -EPERM;
 #else
@@ -3494,7 +3501,7 @@ static int start_special(int argc, char *argv[], void *userdata) {
 
         assert(argv);
 
-        a = verb_to_action(argv[0]);
+        a = verb_to_unit_action(argv[0]);
 
         r = logind_check_inhibitors(a);
         if (r < 0)
@@ -3559,7 +3566,7 @@ static int start_special(int argc, char *argv[], void *userdata) {
                         /* On all other errors, try low-level operation */
                 }
 
-                r = start_unit(argc, argv, userdata);
+                r = start_special_unit(a);
         }
 
         if (termination_action && arg_force < 2 &&
@@ -8308,7 +8315,7 @@ static int reload_with_fallback(void) {
 static int start_with_fallback(void) {
 
         /* First, try systemd via D-Bus. */
-        if (start_unit(0, NULL, NULL) >= 0)
+        if (start_special_unit(arg_action) >= 0)
                 return 0;
 
         /* Nothing else worked, so let's try /dev/initctl */
