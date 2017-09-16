@@ -97,13 +97,16 @@ int manager_get_user_from_creds(Manager *m, sd_bus_message *message, uid_t uid, 
                         return r;
 
                 r = sd_bus_creds_get_owner_uid(creds, &uid);
+                if (r == -ENXIO)
+                        return sd_bus_error_setf(error, BUS_ERROR_NO_USER_FOR_PID,
+                                                 "Caller does not belong to any known or logged in user");
                 if (r < 0)
                         return r;
         }
 
         user = hashmap_get(m->users, UID_TO_PTR(uid));
         if (!user)
-                return sd_bus_error_setf(error, BUS_ERROR_NO_SUCH_USER, "No user "UID_FMT" known or logged in", uid);
+                return sd_bus_error_setf(error, BUS_ERROR_NO_SUCH_USER, "User id "UID_FMT" is not logged in or lingering", uid);
 
         *ret = user;
         return 0;
@@ -407,14 +410,15 @@ static int method_get_user_by_pid(sd_bus_message *message, void *userdata, sd_bu
         r = sd_bus_message_read(message, "u", &pid);
         if (r < 0)
                 return r;
-        if (!pid_is_valid((pid_t) pid))
-                return -EINVAL;
 
         if (pid == 0) {
                 r = manager_get_user_from_creds(m, message, UID_INVALID, error, &user);
                 if (r < 0)
                         return r;
         } else {
+                if (!pid_is_valid((pid_t) pid))
+                    return -EINVAL;
+
                 r = manager_get_user_by_pid(m, pid, &user);
                 if (r < 0)
                         return r;

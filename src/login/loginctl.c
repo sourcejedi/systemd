@@ -958,8 +958,11 @@ static int show_session(int argc, char *argv[], void *userdata) {
 }
 
 static int show_user(int argc, char *argv[], void *userdata) {
+        _cleanup_(sd_bus_error_free) sd_bus_error error = SD_BUS_ERROR_NULL;
+        _cleanup_(sd_bus_message_unrefp) sd_bus_message * reply = NULL;
         bool properties, new_line = false;
         sd_bus *bus = userdata;
+        const char *path = NULL;
         int r, i;
 
         assert(bus);
@@ -975,13 +978,27 @@ static int show_user(int argc, char *argv[], void *userdata) {
                 if (properties)
                         return show_properties(bus, "/org/freedesktop/login1", &new_line);
 
-                return print_user_status_info(bus, "/org/freedesktop/login1/user/self", &new_line);
+                r = sd_bus_call_method(
+                                bus,
+                                "org.freedesktop.login1",
+                                "/org/freedesktop/login1",
+                                "org.freedesktop.login1.Manager",
+                                "GetUserByPID",
+                                &error, &reply,
+                                "u", (uint32_t) 0);
+                if (r < 0) {
+                        log_error("Failed to get user: %s", bus_error_message(&error, r));
+                        return r;
+                }
+
+                r = sd_bus_message_read(reply, "o", &path);
+                if (r < 0)
+                        return bus_log_parse_error(r);
+
+                return print_user_status_info(bus, path, &new_line);
         }
 
         for (i = 1; i < argc; i++) {
-                _cleanup_(sd_bus_error_free) sd_bus_error error = SD_BUS_ERROR_NULL;
-                _cleanup_(sd_bus_message_unrefp) sd_bus_message * reply = NULL;
-                const char *path = NULL;
                 uid_t uid;
 
                 r = get_user_creds((const char**) (argv+i), &uid, NULL, NULL, NULL);

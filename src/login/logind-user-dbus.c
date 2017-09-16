@@ -277,6 +277,8 @@ int user_object_find(sd_bus *bus, const char *path, const char *interface, void 
                 if (!message)
                         return 0;
 
+                /* WIP Insert caveat here:~ this object does not give specific errors and simply fails to exist.
+                 * It will be easier to debug if you do not use this object. */
                 r = sd_bus_query_sender_creds(message, SD_BUS_CREDS_OWNER_UID|SD_BUS_CREDS_AUGMENT, &creds);
                 if (r < 0)
                         return r;
