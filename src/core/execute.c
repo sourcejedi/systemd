@@ -2385,8 +2385,10 @@ static int apply_mount_namespace(
         bind_mount_free_many(bind_mounts, n_bind_mounts);
 
         /* If we couldn't set up the namespace this is probably due to a
-         * missing capability. In this case, silently proceeed. */
-        if (IN_SET(r, -EPERM, -EACCES)) {
+         * missing capability. In this case, silently proceeed.
+         * Unless we're trying to run from a specific chroot image.
+         */
+        if (IN_SET(r, -EPERM, -EACCES) && !changing_root) {
                 log_unit_debug_errno(u, r, "Failed to set up namespace, assuming containerized execution, ignoring: %m");
                 return 0;
         }
