@@ -1160,6 +1160,19 @@ int setup_namespace(
                 goto finish;
         }
 
+        /*
+         plan:
+         *always* use a root (MS_BIND|MS_REC below).  systemd makes / shared, so it will be too
+         make the directory of that root, a private mount - avoid recursion
+
+         always use mount_move_root
+         ... but this will cause a *third* copy to appear.  3 copies, very ugly.
+
+         switch to using pivot_root ?  maybe that resolves the conflict?
+
+         BUT: umount -R takes ~0.2s.  Even the bind mount maybe takes 0.02s, which doesn't seem great.
+         */
+
         if (make_slave) {
                 /* Remount / as SLAVE so that nothing now mounted in the namespace
                    shows up in the parent */
@@ -1250,7 +1263,7 @@ int setup_namespace(
                         goto finish;
         }
 
-        /* Remount / as the desired mode. Not that this will not
+        /* Remount / as the desired mode. Note that this will not
          * reestablish propagation from our side to the host, since
          * what's disconnected is disconnected. */
         if (mount(NULL, "/", NULL, mount_flags | MS_REC, NULL) < 0) {
