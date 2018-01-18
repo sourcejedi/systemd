@@ -2318,6 +2318,7 @@ static int apply_mount_namespace(
         _cleanup_strv_free_ char **empty_directories = NULL;
         char *tmp = NULL, *var = NULL;
         const char *root_dir = NULL, *root_image = NULL;
+        bool changing_root = false.
         NamespaceInfo ns_info = {
                 .ignore_protect_paths = false,
                 .private_dev = context->private_devices,
@@ -2349,6 +2350,8 @@ static int apply_mount_namespace(
 
                 if (!root_image)
                         root_dir = context->root_directory;
+
+                changing_root = !!root_dir || !!root_image;
         }
 
         r = compile_bind_mounts(context, params, &bind_mounts, &n_bind_mounts, &empty_directories);
@@ -2358,9 +2361,9 @@ static int apply_mount_namespace(
         /*
          * If DynamicUser=no and RootDirectory= is set then lets pass a relaxed
          * sandbox info, otherwise enforce it, don't ignore protected paths and
-         * fail if we are enable to apply the sandbox inside the mount namespace.
+         * fail if we are unable to apply the sandbox inside the mount namespace.
          */
-        if (!context->dynamic_user && root_dir)
+        if (!context->dynamic_user && changing_root)
                 ns_info.ignore_protect_paths = true;
 
         needs_sandboxing = (params->flags & EXEC_APPLY_SANDBOXING) && !(command->flags & EXEC_COMMAND_FULLY_PRIVILEGED);
