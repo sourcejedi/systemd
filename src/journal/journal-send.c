@@ -40,7 +40,35 @@
 #include "string-util.h"
 #include "util.h"
 
-#define SNDBUF_SIZE (8*1024*1024)
+//FIXME
+
+/* Desired size of socket buffer.
+ *
+ * Messages which don't fit the socket buffer will be sent as a memfd.
+ * This fallback allows overall memory use to become arbitrarily large.
+ * Let's make sure to avoid the memfd fallback for reasonably sized
+ * log messages, allowing backpressure to work correctly.
+ *
+ * Let's make sure that memory use is not inflated
+ *
+ * In case the system default socket buffer was set very low, make sure
+ * that
+ *
+ * This means we can have multiple  several messages can be arbitrarily long, and several can be bu
+ *
+ * in which case individual length and *total* memory use are unbounded.
+ */
+#define SNDBUF_SIZE (64*1024)
+
+
+
+
+
+/* journald defaults to LineMax=48K.  The doc points out the problem with
+ * larger values, that potentially exceed the max IP datagram size.  That's
+ * already "relatively large".  We don't need to batch any more than that
+ * at a time; let us say "no" to bufferbloat and "yes" to backpressure :). */
+#define SNDBUF_SIZE (64*1024)
 
 #define ALLOCA_CODE_FUNC(f, func)                 \
         do {                                      \
@@ -60,6 +88,7 @@
 
 static int journal_fd(void) {
         int fd;
+        int buf_size;
         static int fd_plus_one = 0;
 
 retry:
@@ -70,7 +99,8 @@ retry:
         if (fd < 0)
                 return -errno;
 
-        fd_inc_sndbuf(fd, SNDBUF_SIZE);
+        buf_size = SNDBUF_SIZE;
+        (void) setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &buf_size, sizeof(buf_size));
 
         if (!__sync_bool_compare_and_swap(&fd_plus_one, 0, fd+1)) {
                 safe_close(fd);
@@ -415,8 +445,6 @@ _public_ int sd_journal_stream_fd(const char *identifier, int priority, int leve
 
         if (shutdown(fd, SHUT_RD) < 0)
                 return -errno;
-
-        (void) fd_inc_sndbuf(fd, SNDBUF_SIZE);
 
         identifier = strempty(identifier);
 

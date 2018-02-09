@@ -24,5 +24,4 @@ ListenDatagram=/run/systemd/journal/socket
 SocketMode=0666
 PassCredentials=yes
 PassSecurity=yes
-ReceiveBuffer=8M
 Service=systemd-journald.service

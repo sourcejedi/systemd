@@ -57,7 +57,7 @@
 #include "utf8.h"
 #include "util.h"
 
-#define SNDBUF_SIZE (8*1024*1024)
+#define SNDBUF_SIZE (16*1024)
 
 static LogTarget log_target = LOG_TARGET_CONSOLE;
 static int log_max_level[] = {LOG_INFO, LOG_INFO};
@@ -135,6 +135,7 @@ static void log_close_syslog(void) {
 
 static int create_log_socket(int type) {
         struct timeval tv;
+        int buf_size;
         int fd;
 
         fd = socket(AF_UNIX, type|SOCK_CLOEXEC, 0);
@@ -142,7 +143,9 @@ static int create_log_socket(int type) {
                 return -errno;
 
         fd = fd_move_above_stdio(fd);
-        (void) fd_inc_sndbuf(fd, SNDBUF_SIZE);
+
+        buf_size = SNDBUF_SIZE;
+        (void) setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &buf_size, sizeof(buf_size));
 
         /* We need a blocking fd here since we'd otherwise lose messages way too early. However, let's not hang forever
          * in the unlikely case of a deadlock. */
