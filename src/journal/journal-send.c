@@ -40,8 +40,6 @@
 #include "string-util.h"
 #include "util.h"
 
-#define SNDBUF_SIZE (8*1024*1024)
-
 #define ALLOCA_CODE_FUNC(f, func)                 \
         do {                                      \
                 size_t _fl;                       \
@@ -69,8 +67,6 @@ retry:
         fd = socket(AF_UNIX, SOCK_DGRAM|SOCK_CLOEXEC, 0);
         if (fd < 0)
                 return -errno;
-
-        fd_inc_sndbuf(fd, SNDBUF_SIZE);
 
         if (!__sync_bool_compare_and_swap(&fd_plus_one, 0, fd+1)) {
                 safe_close(fd);
@@ -415,8 +411,6 @@ _public_ int sd_journal_stream_fd(const char *identifier, int priority, int leve
 
         if (shutdown(fd, SHUT_RD) < 0)
                 return -errno;
-
-        (void) fd_inc_sndbuf(fd, SNDBUF_SIZE);
 
         identifier = strempty(identifier);
 

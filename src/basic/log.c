@@ -57,8 +57,6 @@
 #include "utf8.h"
 #include "util.h"
 
-#define SNDBUF_SIZE (8*1024*1024)
-
 static LogTarget log_target = LOG_TARGET_CONSOLE;
 static int log_max_level[] = {LOG_INFO, LOG_INFO};
 assert_cc(ELEMENTSOF(log_max_level) == _LOG_REALM_MAX);
@@ -137,8 +135,6 @@ static int create_log_socket(int type) {
         fd = socket(AF_UNIX, type|SOCK_CLOEXEC, 0);
         if (fd < 0)
                 return -errno;
-
-        (void) fd_inc_sndbuf(fd, SNDBUF_SIZE);
 
         /* We need a blocking fd here since we'd otherwise lose
         messages way too early. However, let's not hang forever in the
