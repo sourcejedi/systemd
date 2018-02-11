@@ -84,8 +84,6 @@
 
 #define RECHECK_SPACE_USEC (30*USEC_PER_SEC)
 
-#define NOTIFY_SNDBUF_SIZE (8*1024*1024)
-
 /* The period to insert between posting changes for coalescing */
 #define POST_CHANGE_TIMER_INTERVAL_USEC (250*USEC_PER_MSEC)
 
@@ -1657,8 +1655,6 @@ static int server_connect_notify(Server *s) {
         s->notify_fd = socket(AF_UNIX, SOCK_DGRAM|SOCK_CLOEXEC|SOCK_NONBLOCK, 0);
         if (s->notify_fd < 0)
                 return log_error_errno(errno, "Failed to create notify socket: %m");
-
-        (void) fd_inc_sndbuf(s->notify_fd, NOTIFY_SNDBUF_SIZE);
 
         strncpy(sa.un.sun_path, e, sizeof(sa.un.sun_path));
         if (sa.un.sun_path[0] == '@')

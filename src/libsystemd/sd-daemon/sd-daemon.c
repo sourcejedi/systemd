@@ -44,8 +44,6 @@
 #include "strv.h"
 #include "util.h"
 
-#define SNDBUF_SIZE (8*1024*1024)
-
 static void unsetenv_all(bool unset_environment) {
 
         if (!unset_environment)
@@ -456,6 +454,11 @@ _public_ int sd_is_mq(int fd, const char *path) {
         return 1;
 }
 
+/*
+ * Note, the maximum number of fds you can send at a time is just under 255 on
+ * Linux.  No-one complained so far.  This also means we have no need to worry
+ * about the socket buffer size :).
+ */
 _public_ int sd_pid_notify_with_fds(
                 pid_t pid,
                 int unset_environment,
@@ -510,8 +513,6 @@ _public_ int sd_pid_notify_with_fds(
                 r = -errno;
                 goto finish;
         }
-
-        (void) fd_inc_sndbuf(fd, SNDBUF_SIZE);
 
         iovec.iov_len = strlen(state);
 
