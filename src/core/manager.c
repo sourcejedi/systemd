@@ -95,7 +95,6 @@
 #include "watchdog.h"
 
 #define NOTIFY_RCVBUF_SIZE (8*1024*1024)
-#define CGROUPS_AGENT_RCVBUF_SIZE (8*1024*1024)
 
 /* Initial delay and the interval for printing status messages about running jobs */
 #define JOBS_IN_PROGRESS_WAIT_USEC (5*USEC_PER_SEC)
@@ -898,8 +897,6 @@ static int manager_setup_cgroups_agent(Manager *m) {
                 fd = socket(AF_UNIX, SOCK_DGRAM|SOCK_CLOEXEC|SOCK_NONBLOCK, 0);
                 if (fd < 0)
                         return log_error_errno(errno, "Failed to allocate cgroups agent socket: %m");
-
-                fd_inc_rcvbuf(fd, CGROUPS_AGENT_RCVBUF_SIZE);
 
                 (void) unlink(sa.un.sun_path);
 
