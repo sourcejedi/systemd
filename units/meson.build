@@ -132,6 +132,7 @@ in_units = [
         ['halt-local.service',                   'HAVE_SYSV_COMPAT'],
         ['initrd-cleanup.service',               ''],
         ['initrd-parse-etc.service',             ''],
+        ['initrd-shutdown-journald.service',     ''],
         ['initrd-switch-root.service',           ''],
         ['initrd-udevadm-cleanup-db.service',    ''],
         ['kmod-static-nodes.service',            'HAVE_KMOD ENABLE_TMPFILES',

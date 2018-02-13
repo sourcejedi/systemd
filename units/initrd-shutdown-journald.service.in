@@ -8,14 +8,15 @@
 #  (at your option) any later version.
 
 [Unit]
-Description=Switch Root
+Description=Shutting Down Journal
 DefaultDependencies=no
 ConditionPathExists=/etc/initrd-release
-OnFailure=emergency.target
-OnFailureJobMode=replace-irreversibly
-AllowIsolate=yes
+After=initrd-switch-root.target
+Before=initrd-switch-root.service
 
 [Service]
 Type=oneshot
 StandardOutput=null
-ExecStart=@rootbindir@/systemctl --no-block switch-root /sysroot
+ExecStart=@rootbindir@/systemctl stop systemd-journald.service \
+                                      systemd-journald.socket \
+                                      systemd-journald-dev-log.socket

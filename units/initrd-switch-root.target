@@ -21,5 +21,7 @@ Before=sysinit.target
 
 Wants=initrd-udevadm-cleanup-db.service initrd-root-fs.target initrd-fs.target systemd-journald.service initrd-cleanup.service
 After=initrd-udevadm-cleanup-db.service initrd-root-fs.target initrd-fs.target emergency.service emergency.target
+
+Wants=initrd-shutdown-journald.service
 Requires=initrd-switch-root.service
-Before=initrd-switch-root.service
+After=initrd-shutdown-journald.service initrd-switch-root.service
