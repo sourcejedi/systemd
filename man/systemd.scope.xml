@@ -91,10 +91,10 @@
     <varname>DefaultDependencies=no</varname> is set:</para>
 
     <itemizedlist>
-      <listitem><para>Scope units will automatically have dependencies of
-      type <varname>Conflicts=</varname> and
-      <varname>Before=</varname> on
-      <filename>shutdown.target</filename>. These ensure
+      <listitem><para>Scope units will have dependencies of type <varname>Requires=</varname> and
+      <varname>After=</varname> on <filename>sysinit.target</filename>, a dependency of type <varname>After=</varname> on
+      <filename>basic.target</filename> as well as dependencies of type <varname>Conflicts=</varname> and
+      <varname>Before=</varname> on <filename>shutdown.target</filename>. These ensure
       that scope units are removed prior to system
       shutdown. Only scope units involved with early boot or
       late system shutdown should disable

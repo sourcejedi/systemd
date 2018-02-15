@@ -11,8 +11,15 @@
 Description=Switch Root
 ConditionPathExists=/etc/initrd-release
 DefaultDependencies=no
-Requires=initrd-switch-root.service
-Before=initrd-switch-root.service
 AllowIsolate=yes
+
+# When this target is "isolated", wait for the normal services - which have
+# DefaultDependencies=yes and hence After=sysinit.target - to stop *before*
+# we switch-root and send SIGKILL to all processes.
+Conflicts=sysinit.target
+Before=sysinit.target
+
 Wants=initrd-udevadm-cleanup-db.service initrd-root-fs.target initrd-fs.target systemd-journald.service initrd-cleanup.service
 After=initrd-udevadm-cleanup-db.service initrd-root-fs.target initrd-fs.target emergency.service emergency.target
+Requires=initrd-switch-root.service
+Before=initrd-switch-root.service
