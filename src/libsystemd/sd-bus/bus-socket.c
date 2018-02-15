@@ -47,8 +47,6 @@
 #include "utf8.h"
 #include "util.h"
 
-#define SNDBUF_SIZE (8*1024*1024)
-
 static void iovec_advance(struct iovec iov[], unsigned *idx, size_t size) {
 
         while (size > 0) {
@@ -594,10 +592,6 @@ static int bus_socket_read_auth(sd_bus *b) {
 
 void bus_socket_setup(sd_bus *b) {
         assert(b);
-
-        /* Increase the buffers to 8 MB */
-        (void) fd_inc_rcvbuf(b->input_fd, SNDBUF_SIZE);
-        (void) fd_inc_sndbuf(b->output_fd, SNDBUF_SIZE);
 
         b->message_version = 1;
         b->message_endian = 0;
