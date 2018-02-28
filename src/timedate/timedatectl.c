@@ -93,13 +93,13 @@ static void print_status_info(const StatusInfo *i) {
 
         if (have_time) {
                 n = strftime(a, sizeof a, "%a %Y-%m-%d %H:%M:%S %Z", localtime_r(&sec, &tm));
-                printf("                      Local time: %s\n", n > 0 ? a : "n/a");
+                printf("                       Local time: %s\n", n > 0 ? a : "n/a");
 
                 n = strftime(a, sizeof a, "%a %Y-%m-%d %H:%M:%S UTC", gmtime_r(&sec, &tm));
-                printf("                  Universal time: %s\n", n > 0 ? a : "n/a");
+                printf("                   Universal time: %s\n", n > 0 ? a : "n/a");
         } else {
-                printf("                      Local time: %s\n", "n/a");
-                printf("                  Universal time: %s\n", "n/a");
+                printf("                       Local time: %s\n", "n/a");
+                printf("                   Universal time: %s\n", "n/a");
         }
 
         if (i->rtc_time > 0) {
@@ -107,9 +107,9 @@ static void print_status_info(const StatusInfo *i) {
 
                 rtc_sec = (time_t) (i->rtc_time / USEC_PER_SEC);
                 n = strftime(a, sizeof a, "%a %Y-%m-%d %H:%M:%S", gmtime_r(&rtc_sec, &tm));
-                printf("                        RTC time: %s\n", n > 0 ? a : "n/a");
+                printf("                         RTC time: %s\n", n > 0 ? a : "n/a");
         } else
-                printf("                        RTC time: %s\n", "n/a");
+                printf("                         RTC time: %s\n", "n/a");
 
         if (have_time)
                 n = strftime(a, sizeof a, "%Z, %z", localtime_r(&sec, &tm));
@@ -124,10 +124,10 @@ static void print_status_info(const StatusInfo *i) {
         else
                 tzset();
 
-        printf("                       Time zone: %s (%s)\n"
-               "       System clock synchronized: %s\n"
-               "systemd-timesyncd.service active: %s\n"
-               "                 RTC in local TZ: %s\n",
+        printf("                        Time zone: %s (%s)\n"
+               "        System clock synchronized: %s\n"
+               "systemd-timesyncd.service enabled: %s\n"
+               "                  RTC in local TZ: %s\n",
                strna(i->timezone), have_time && n > 0 ? a : "n/a",
                yes_no(i->ntp_synced),
                i->ntp_capable ? yes_no(i->ntp_enabled) : "n/a",
