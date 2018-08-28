@@ -379,6 +379,20 @@ static int get_mount_flags(const char *path, unsigned long *flags) {
         return 0;
 }
 
+/* Change the per-mount ro flag on an existing mount. */
+int remount_bind_mount(const char *path, bool ro) {
+        unsigned long orig_flags = 0;
+
+        /* Try to reuse the original flag set */
+        (void) get_mount_flags(path, &orig_flags);
+        orig_flags &= ~MS_RDONLY;
+
+        if (mount(NULL, path, NULL, orig_flags|MS_BIND|MS_REMOUNT|(ro ? MS_RDONLY : 0), NULL) < 0)
+                return -errno;
+
+        return 0;
+}
+
 /* Use this function only if do you have direct access to /proc/self/mountinfo
  * and need the caller to open it for you. This is the case when /proc is
  * masked or not mounted. Otherwise, use bind_remount_recursive. */
@@ -414,7 +428,6 @@ int bind_remount_recursive_with_mountinfo(const char *prefix, bool ro, char **bl
                 _cleanup_set_free_free_ Set *todo = NULL;
                 bool top_autofs = false;
                 char *x;
-                unsigned long orig_flags;
 
                 todo = set_new(&path_hash_ops);
                 if (!todo)
@@ -513,12 +526,9 @@ int bind_remount_recursive_with_mountinfo(const char *prefix, bool ro, char **bl
                         if (mount(cleaned, cleaned, NULL, MS_BIND|MS_REC, NULL) < 0)
                                 return -errno;
 
-                        orig_flags = 0;
-                        (void) get_mount_flags(cleaned, &orig_flags);
-                        orig_flags &= ~MS_RDONLY;
-
-                        if (mount(NULL, cleaned, NULL, orig_flags|MS_BIND|MS_REMOUNT|(ro ? MS_RDONLY : 0), NULL) < 0)
-                                return -errno;
+                        r = remount_bind_mount(cleaned, ro);
+                        if (r < 0)
+                                return r;
 
                         log_debug("Made top-level directory %s a mount point.", prefix);
 
@@ -558,13 +568,9 @@ int bind_remount_recursive_with_mountinfo(const char *prefix, bool ro, char **bl
                         if (r < 0)
                                 return r;
 
-                        /* Try to reuse the original flag set */
-                        orig_flags = 0;
-                        (void) get_mount_flags(x, &orig_flags);
-                        orig_flags &= ~MS_RDONLY;
-
-                        if (mount(NULL, x, NULL, orig_flags|MS_BIND|MS_REMOUNT|(ro ? MS_RDONLY : 0), NULL) < 0)
-                                return -errno;
+                        r = remount_bind_mount(x, ro);
+                        if (r < 0)
+                                return r;
 
                         log_debug("Remounted %s read-only.", x);
                 }
