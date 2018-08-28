@@ -381,13 +381,25 @@ static int get_mount_flags(const char *path, unsigned long *flags) {
 
 /* Change the per-mount ro flag on an existing mount. */
 int remount_bind_mount(const char *path, bool ro) {
-        unsigned long orig_flags = 0;
+        _cleanup_free_ char *pinned_path = NULL;
+        _cleanup_close_ int path_fd = -1;
+        unsigned long orig_flags;
+        int r;
 
-        /* Try to reuse the original flag set */
-        (void) get_mount_flags(path, &orig_flags);
+        /* Take a reference to the specific mount. */
+        path_fd = open(path, O_PATH|O_CLOEXEC);
+        if (path_fd < 0)
+                return -errno;
+        if (asprintf(&pinned_path, "/proc/self/fd/%d", path_fd) < 0)
+                return -ENOMEM;
+
+        /* Make sure to reuse the original flag set. */
+        r = get_mount_flags(pinned_path, &orig_flags);
+        if (r < 0)
+                return r;
         orig_flags &= ~MS_RDONLY;
 
-        if (mount(NULL, path, NULL, orig_flags|MS_BIND|MS_REMOUNT|(ro ? MS_RDONLY : 0), NULL) < 0)
+        if (mount(NULL, pinned_path, NULL, orig_flags|MS_BIND|MS_REMOUNT|(ro ? MS_RDONLY : 0), NULL) < 0)
                 return -errno;
 
         return 0;
