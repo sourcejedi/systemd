@@ -1026,12 +1026,11 @@ static int apply_mount(
         return 0;
 }
 
-static int make_read_only(const MountEntry *m, char **blacklist, FILE *proc_self_mountinfo) {
+static int make_read_only(const MountEntry *m, char **blacklist) {
         bool submounts = false;
         int r = 0;
 
         assert(m);
-        assert(proc_self_mountinfo);
 
         if (mount_entry_read_only(m)) {
                 if (IN_SET(m->mode, EMPTY_DIR, TMPFS)) {
@@ -1040,7 +1039,7 @@ static int make_read_only(const MountEntry *m, char **blacklist, FILE *proc_self
                                 r = -errno;
                 } else {
                         submounts = true;
-                        r = bind_remount_recursive_with_mountinfo(mount_entry_path(m), true, blacklist, proc_self_mountinfo);
+                        r = bind_remount_recursive(mount_entry_path(m), true, blacklist);
                 }
         } else if (m->mode == PRIVATE_DEV) {
                 /* Superblock can be readonly but the submounts can't */
@@ -1381,17 +1380,8 @@ int setup_namespace(
                 (void) base_filesystem_create(root, UID_INVALID, GID_INVALID);
 
         if (n_mounts > 0) {
-                _cleanup_fclose_ FILE *proc_self_mountinfo = NULL;
                 char **blacklist;
                 size_t j;
-
-                /* Open /proc/self/mountinfo now as it may become unavailable if we mount anything on top of /proc.
-                 * For example, this is the case with the option: 'InaccessiblePaths=/proc' */
-                proc_self_mountinfo = fopen("/proc/self/mountinfo", "re");
-                if (!proc_self_mountinfo) {
-                        r = log_debug_errno(errno, "Failed to open /proc/self/mountinfo: %m");
-                        goto finish;
-                }
 
                 /* First round, establish all mounts we need */
                 for (;;) {
@@ -1435,7 +1425,7 @@ int setup_namespace(
 
                 /* Second round, flip the ro bits if necessary. */
                 for (m = mounts; m < mounts + n_mounts; ++m) {
-                        r = make_read_only(m, blacklist, proc_self_mountinfo);
+                        r = make_read_only(m, blacklist);
                         if (r < 0)
                                 goto finish;
                 }
